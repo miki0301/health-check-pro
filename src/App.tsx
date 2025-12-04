@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
+// src/App.tsx
+import { useState, useEffect, useMemo } from 'react';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip
 } from 'recharts';
@@ -463,7 +464,7 @@ export default function App() {
                         startAngle={90}
                         endAngle={-270}
                       >
-                        {pieData.map((entry, index) => (
+                        {pieData.map((_, index) => (
                           <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                         ))}
                       </Pie>
