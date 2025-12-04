@@ -1,4 +1,3 @@
-// src/App.tsx
 import { useState, useEffect, useMemo } from 'react';
 import { 
   PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip
@@ -256,7 +255,6 @@ const ReportModal = ({ tasks, onClose }: { tasks: Task[], onClose: () => void })
 
   const copyToClipboard = () => {
     const text = generateReportText();
-    // 使用現代 Clipboard API
     navigator.clipboard.writeText(text).then(() => {
       alert('報告已複製到剪貼簿！');
     }).catch(err => {
@@ -301,16 +299,12 @@ export default function App() {
 
   // Auth & Init Data
   useEffect(() => {
-    // 1. 監聽登入狀態
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       if (u) {
-        console.log("已登入:", u.uid);
         setUser(u);
         setErrorMsg(null);
       } else {
-        // 若未登入，自動匿名登入
         try {
-          console.log("嘗試匿名登入...");
           await signInAnonymously(auth);
         } catch (err: any) {
           console.error("登入失敗:", err);
@@ -326,11 +320,10 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // 2. 修改資料庫路徑為根目錄 'health_tasks'
+    // Use root collection 'health_tasks' for app deployment
     const q = query(collection(db, 'health_tasks'), orderBy('id'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (snapshot.empty) {
-        // Initialize if empty
         const batch = writeBatch(db);
         INITIAL_TASKS.forEach(task => {
           const docRef = doc(db, 'health_tasks', task.id);
@@ -400,14 +393,11 @@ export default function App() {
   ];
   const COLORS = ['#10b981', '#cbd5e1'];
 
-  // --- Loading / Error States ---
-
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-400 gap-4">
         <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
         <p>系統載入中...</p>
-        <p className="text-xs text-slate-300">正在連線 Firebase 資料庫</p>
       </div>
     );
   }
@@ -421,14 +411,6 @@ export default function App() {
             <h2 className="text-xl font-bold">連線發生錯誤</h2>
           </div>
           <p className="text-slate-700 mb-4">{errorMsg}</p>
-          <div className="text-sm bg-slate-100 p-3 rounded text-slate-600">
-            <strong>請檢查以下項目：</strong>
-            <ul className="list-disc ml-5 mt-2 space-y-1">
-              <li>Firebase Console > Authentication > 是否已開啟「匿名」登入？</li>
-              <li>Firebase Console > Firestore Database > 是否已建立資料庫？</li>
-              <li>Vercel 環境變數設定是否正確 (不要包含引號)？</li>
-            </ul>
-          </div>
           <button 
             onClick={() => window.location.reload()}
             className="mt-6 w-full bg-slate-800 text-white py-2 rounded hover:bg-slate-900 transition-colors"
