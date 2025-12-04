@@ -6,7 +6,7 @@ import {
 import { 
   CheckCircle2, AlertTriangle, FileText, 
   ChevronDown, ChevronUp, Share2, ClipboardCopy, 
-  LayoutDashboard, ListTodo, Building2
+  LayoutDashboard, ListTodo, Building2, WifiOff
 } from 'lucide-react';
 // Import from our local firebase file
 import { db, auth } from './firebase'; 
@@ -294,6 +294,7 @@ export default function App() {
   const [user, setUser] = useState<any>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'dashboard' | 'checklist'>('dashboard');
   const [showReport, setShowReport] = useState(false);
   const [expandedCat, setExpandedCat] = useState<Category | null>('accreditation');
@@ -303,10 +304,19 @@ export default function App() {
     // 1. 監聽登入狀態
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
       if (u) {
+        console.log("已登入:", u.uid);
         setUser(u);
+        setErrorMsg(null);
       } else {
         // 若未登入，自動匿名登入
-        await signInAnonymously(auth);
+        try {
+          console.log("嘗試匿名登入...");
+          await signInAnonymously(auth);
+        } catch (err: any) {
+          console.error("登入失敗:", err);
+          setErrorMsg(`登入失敗: ${err.message} (請確認 Firebase Console Authentication 是否已開啟 '匿名' 登入)`);
+          setLoading(false);
+        }
       }
     });
     return () => unsubscribe();
@@ -326,7 +336,11 @@ export default function App() {
           const docRef = doc(db, 'health_tasks', task.id);
           batch.set(docRef, task);
         });
-        batch.commit();
+        batch.commit().catch(err => {
+            console.error("初始化資料失敗:", err);
+            setErrorMsg("初始化資料失敗，請確認 Firestore 規則是否已設為公開 (Test Mode)。");
+            setLoading(false);
+        });
       } else {
         const loadedTasks = snapshot.docs.map(d => d.data() as Task);
         setTasks(loadedTasks);
@@ -334,6 +348,7 @@ export default function App() {
       setLoading(false);
     }, (error) => {
         console.error("Firestore error:", error);
+        setErrorMsg(`讀取資料失敗: ${error.message} (請確認 Firestore 資料庫是否已建立且規則正確)`);
         setLoading(false);
     });
 
@@ -343,14 +358,22 @@ export default function App() {
   // Actions
   const toggleTask = async (id: string, newVal: boolean) => {
     if (!user) return;
-    const taskRef = doc(db, 'health_tasks', id);
-    await updateDoc(taskRef, { isCompleted: newVal });
+    try {
+      const taskRef = doc(db, 'health_tasks', id);
+      await updateDoc(taskRef, { isCompleted: newVal });
+    } catch (err: any) {
+      alert("儲存失敗: " + err.message);
+    }
   };
 
   const updateNote = async (id: string, newNote: string) => {
     if (!user) return;
-    const taskRef = doc(db, 'health_tasks', id);
-    await updateDoc(taskRef, { note: newNote });
+    try {
+      const taskRef = doc(db, 'health_tasks', id);
+      await updateDoc(taskRef, { note: newNote });
+    } catch (err: any) {
+      alert("儲存失敗: " + err.message);
+    }
   };
 
   // Metrics Calculation
@@ -377,8 +400,44 @@ export default function App() {
   ];
   const COLORS = ['#10b981', '#cbd5e1'];
 
+  // --- Loading / Error States ---
+
   if (loading) {
-    return <div className="min-h-screen bg-slate-50 flex items-center justify-center text-slate-400">系統載入中...</div>;
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center text-slate-400 gap-4">
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+        <p>系統載入中...</p>
+        <p className="text-xs text-slate-300">正在連線 Firebase 資料庫</p>
+      </div>
+    );
+  }
+
+  if (errorMsg) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-4">
+        <div className="bg-white p-6 rounded-xl shadow-lg border-l-4 border-red-500 max-w-md w-full">
+          <div className="flex items-center gap-3 mb-4 text-red-600">
+            <WifiOff size={32} />
+            <h2 className="text-xl font-bold">連線發生錯誤</h2>
+          </div>
+          <p className="text-slate-700 mb-4">{errorMsg}</p>
+          <div className="text-sm bg-slate-100 p-3 rounded text-slate-600">
+            <strong>請檢查以下項目：</strong>
+            <ul className="list-disc ml-5 mt-2 space-y-1">
+              <li>Firebase Console > Authentication > 是否已開啟「匿名」登入？</li>
+              <li>Firebase Console > Firestore Database > 是否已建立資料庫？</li>
+              <li>Vercel 環境變數設定是否正確 (不要包含引號)？</li>
+            </ul>
+          </div>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-6 w-full bg-slate-800 text-white py-2 rounded hover:bg-slate-900 transition-colors"
+          >
+            重新整理頁面
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
