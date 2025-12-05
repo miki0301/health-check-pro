@@ -5,13 +5,13 @@ import {
 import { 
   CheckCircle2, AlertTriangle, FileText, 
   ChevronDown, ChevronUp, Share2, ClipboardCopy, 
-  LayoutDashboard, ListTodo, Building2, WifiOff
+  LayoutDashboard, ListTodo, Building2, WifiOff, Plus, Trash2
 } from 'lucide-react';
 // Import from our local firebase file
 import { db, auth } from './firebase'; 
 import { 
   collection, doc, updateDoc, onSnapshot, 
-  query, writeBatch, orderBy 
+  query, writeBatch, orderBy, setDoc, deleteDoc
 } from 'firebase/firestore';
 import { signInAnonymously, onAuthStateChanged } from 'firebase/auth';
 
@@ -160,7 +160,7 @@ const CATEGORY_COLORS: Record<Category, string> = {
 
 // --- Sub Components ---
 
-const TaskItem = ({ task, onToggle, onUpdateNote }: { task: Task, onToggle: (id: string, val: boolean) => void, onUpdateNote: (id: string, note: string) => void }) => {
+const TaskItem = ({ task, onToggle, onUpdateNote, onDelete }: { task: Task, onToggle: (id: string, val: boolean) => void, onUpdateNote: (id: string, note: string) => void, onDelete: (id: string) => void }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [noteTemp, setNoteTemp] = useState(task.note);
 
@@ -170,7 +170,7 @@ const TaskItem = ({ task, onToggle, onUpdateNote }: { task: Task, onToggle: (id:
   };
 
   return (
-    <div className={`p-4 mb-3 bg-white rounded-lg shadow-sm border-l-4 transition-all ${task.isCompleted ? 'border-green-500 opacity-70' : task.isUrgent ? 'border-red-500' : 'border-blue-400'}`}>
+    <div className={`p-4 mb-3 bg-white rounded-lg shadow-sm border-l-4 transition-all group/item ${task.isCompleted ? 'border-green-500 opacity-70' : task.isUrgent ? 'border-red-500' : 'border-blue-400'}`}>
       <div className="flex items-start gap-3">
         <button 
           onClick={() => onToggle(task.id, !task.isCompleted)}
@@ -184,12 +184,22 @@ const TaskItem = ({ task, onToggle, onUpdateNote }: { task: Task, onToggle: (id:
             <h3 className={`font-medium text-slate-800 ${task.isCompleted ? 'line-through text-slate-500' : ''}`}>
               {task.title}
             </h3>
-            {task.isUrgent && !task.isCompleted && (
-              <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-full">
-                <AlertTriangle size={12} />
-                緊急
-              </span>
-            )}
+            <div className="flex items-center gap-2">
+              {task.isUrgent && !task.isCompleted && (
+                <span className="flex items-center gap-1 text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-full">
+                  <AlertTriangle size={12} />
+                  緊急
+                </span>
+              )}
+              {/* Delete button (visible on hover) */}
+              <button 
+                onClick={() => { if(confirm('確定要刪除此項目嗎？')) onDelete(task.id) }}
+                className="text-slate-300 hover:text-red-500 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                title="刪除項目"
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
           </div>
           
           {task.subItems && task.subItems.length > 0 && (
@@ -255,6 +265,7 @@ const ReportModal = ({ tasks, onClose }: { tasks: Task[], onClose: () => void })
 
   const copyToClipboard = () => {
     const text = generateReportText();
+    // 使用現代 Clipboard API
     navigator.clipboard.writeText(text).then(() => {
       alert('報告已複製到剪貼簿！');
     }).catch(err => {
@@ -296,6 +307,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'checklist'>('dashboard');
   const [showReport, setShowReport] = useState(false);
   const [expandedCat, setExpandedCat] = useState<Category | null>('accreditation');
+  
+  // New Task States
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [isNewTaskUrgent, setIsNewTaskUrgent] = useState(false);
 
   // Auth & Init Data
   useEffect(() => {
@@ -320,7 +335,6 @@ export default function App() {
   useEffect(() => {
     if (!user) return;
 
-    // Use root collection 'health_tasks' for app deployment
     const q = query(collection(db, 'health_tasks'), orderBy('id'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       if (snapshot.empty) {
@@ -366,6 +380,35 @@ export default function App() {
       await updateDoc(taskRef, { note: newNote });
     } catch (err: any) {
       alert("儲存失敗: " + err.message);
+    }
+  };
+
+  const addTask = async (category: Category) => {
+    if (!newTaskTitle.trim() || !user) return;
+    try {
+      const newId = `custom_${Date.now()}`;
+      const newTask: Task = {
+        id: newId,
+        title: newTaskTitle,
+        category: category,
+        isCompleted: false,
+        isUrgent: isNewTaskUrgent,
+        note: '',
+      };
+      await setDoc(doc(db, 'health_tasks', newId), newTask);
+      setNewTaskTitle('');
+      setIsNewTaskUrgent(false);
+    } catch (err: any) {
+      alert("新增失敗: " + err.message);
+    }
+  };
+
+  const deleteTask = async (id: string) => {
+    if (!user) return;
+    try {
+      await deleteDoc(doc(db, 'health_tasks', id));
+    } catch (err: any) {
+      alert("刪除失敗: " + err.message);
     }
   };
 
@@ -576,8 +619,41 @@ export default function App() {
                             task={task} 
                             onToggle={toggleTask}
                             onUpdateNote={updateNote}
+                            onDelete={deleteTask}
                           />
                         ))}
+                        
+                        {/* --- Add New Task Input --- */}
+                        <div className="mt-4 pt-4 border-t border-slate-200 flex flex-col sm:flex-row gap-2 items-start sm:items-center">
+                          <div className="flex-1 w-full sm:w-auto flex gap-2">
+                            <input 
+                              type="text" 
+                              value={newTaskTitle}
+                              onChange={(e) => setNewTaskTitle(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && addTask(cat)}
+                              placeholder={`新增 ${CATEGORY_LABELS[cat].split(' ')[0]} 項目...`}
+                              className="flex-1 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                          </div>
+                          <div className="flex items-center gap-3 w-full sm:w-auto">
+                            <label className="flex items-center gap-2 text-sm text-slate-600 cursor-pointer select-none">
+                              <input 
+                                type="checkbox" 
+                                checked={isNewTaskUrgent}
+                                onChange={(e) => setIsNewTaskUrgent(e.target.checked)}
+                                className="w-4 h-4 text-red-600 rounded focus:ring-red-500 border-gray-300"
+                              />
+                              <span className={isNewTaskUrgent ? "text-red-600 font-bold" : ""}>緊急</span>
+                            </label>
+                            <button 
+                              onClick={() => addTask(cat)}
+                              disabled={!newTaskTitle.trim()}
+                              className="flex-1 sm:flex-none bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                            >
+                              <Plus size={16} /> 新增
+                            </button>
+                          </div>
+                        </div>
                      </div>
                    )}
                  </div>
